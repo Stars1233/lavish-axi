@@ -222,6 +222,85 @@ export const PLAYBOOKS = [
       "Lavish is strongest when the artifact becomes a focused review surface and not just a static page.",
       'A native single-choice question should submit the final value: `<form data-lavish-question="plan" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get(\'plan\'); if (choice) window.lavish.queuePrompt(\'Use the \' + choice + \' plan\', { tag: \'choice\', text: \'Plan: \' + choice, element: event.currentTarget, data: { question: \'plan\', answer: choice } });"><label><input type="radio" name="plan" value="Starter"> Starter</label><label><input type="radio" name="plan" value="Pro"> Pro</label><button type="submit">Queue this answer</button></form>`.',
       `A tracked batch should submit the final selected set once: <form data-lavish-question="tracked-review" onsubmit="event.preventDefault(); const selected = [...event.currentTarget.querySelectorAll('input[name=items]:checked')].map((input) => ({ id: input.value, label: input.dataset.label, disposition: input.dataset.disposition })); if (selected.length) window.lavish.queuePrompt('Act on every selected item and return an item-by-item receipt. Account for every submitted ID before reporting completion.', { tag: 'tracked-batch', text: 'Apply ' + selected.length + ' selected review items', element: event.currentTarget, data: { items: selected } });"><label><input type="checkbox" name="items" value="R-03" data-label="Preserve rollback behavior" data-disposition="must-address"> R-03 — Preserve rollback behavior</label><label><input type="checkbox" name="items" value="R-08" data-label="Reuse the existing error surface" data-disposition="must-address"> R-08 — Reuse the existing error surface</label><button type="submit">Queue selected items</button></form>`,
+      `For a decision artifact a human may open by double-clicking the HTML, optionally include this standalone answer-copy control: it copies every question's answers as text the human pastes back into the chat for the agent to read. It works without Lavish and remains absent unless you write it into the artifact:
+\`\`\`html
+<div>
+  <button type="button" onclick="(async (btn) => {
+    const copyRun = btn._lavishCopyRun = (btn._lavishCopyRun || 0) + 1;
+    const qs = [...document.querySelectorAll('[data-lavish-question]')];
+    const status = btn.parentElement.querySelector('[data-lavish-copy-all-status]');
+    btn.parentElement.querySelector('[data-lavish-copy-all-manual]')?.remove();
+    const out = [];
+    for (const q of qs) {
+      const key = q.getAttribute('data-lavish-question')?.trim() || 'Question';
+      const lines = [];
+      for (const el of q.querySelectorAll('input, select, textarea')) {
+        if (el.matches(':disabled')) continue;
+        if (el.closest('[data-lavish-question]') !== q) continue;
+        const isChoice = el.matches('input[type=checkbox], input[type=radio]');
+        if (isChoice && !el.checked) continue;
+        if (el.matches('input[type=button], input[type=submit], input[type=reset], input[type=image], input[type=hidden], input[type=file], input[type=range], input[type=color]')) continue;
+        let vals;
+        if (el instanceof HTMLSelectElement) {
+          vals = [...el.selectedOptions].filter((o) => !o.disabled && !o.closest('optgroup[disabled]')).map((o) => o.value.trim()).filter(Boolean);
+        } else {
+          const v = isChoice && (!el.hasAttribute('value') || !el.value.trim())
+            ? el.labels?.[0]?.textContent?.trim() || el.getAttribute('aria-label')?.trim() || el.name || ''
+            : el.value.trim();
+          vals = v ? [v] : [];
+        }
+        const label = el.name || el.labels?.[0]?.textContent?.trim() || el.getAttribute('aria-label')?.trim() || el.getAttribute('placeholder')?.trim() || el.tagName.toLowerCase();
+        for (const v of vals) lines.push('  ' + label + ': ' + v.split('\\n').join('\\n    '));
+      }
+      if (lines.length) out.push(key + ':\\n' + lines.join('\\n'));
+    }
+    const text = out.join('\\n\\n');
+    if (!text) {
+      status.textContent = qs.length ? 'No answers to copy yet.' : 'No questions or answers to copy.';
+      return;
+    }
+    status.textContent = '';
+    try {
+      if (typeof navigator.clipboard?.writeText !== 'function') throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(text);
+      if (copyRun !== btn._lavishCopyRun) return;
+      status.textContent = 'Answers copied.';
+      return;
+    } catch {}
+    if (copyRun !== btn._lavishCopyRun) return;
+    const tmp = document.createElement('textarea');
+    tmp.value = text;
+    tmp.readOnly = true;
+    tmp.setAttribute('aria-hidden', 'true');
+    tmp.style.position = 'fixed';
+    tmp.style.left = '-10000px';
+    document.body.append(tmp);
+    tmp.focus();
+    tmp.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch {}
+    tmp.remove();
+    if (ok) {
+      status.textContent = 'Answers copied.';
+      return;
+    }
+    btn.parentElement.querySelector('[data-lavish-copy-all-manual]')?.remove();
+    const man = document.createElement('textarea');
+    man.value = text;
+    man.readOnly = true;
+    man.rows = Math.min(12, Math.max(3, text.split('\\n').length));
+    man.setAttribute('aria-label', 'Answers to copy manually');
+    man.dataset.lavishCopyAllManual = '';
+    btn.insertAdjacentElement('afterend', man);
+    man.focus();
+    man.select();
+    status.textContent = 'Clipboard unavailable. Copy the answers below manually.';
+  })(this)">Copy all answers</button>
+  <span data-lavish-copy-all-status role="status" aria-live="polite"></span>
+</div>
+\`\`\``,
       "The agent's tracked-batch completion receipt must give every submitted ID exactly one outcome: addressed with concrete evidence, deferred with a reason, or rejected with a reason. Evidence may cover several IDs. Before declaring completion, compare the submitted ID set with the receipt ID set and surface every missing ID.",
       "A custom choice UI should make option buttons update local state, then use a separate Queue answer button with data-lavish-action to queue the final selected value.",
       "Use window.lavish.queuePrompt for user intent, not internal analytics or UI-only state changes.",
